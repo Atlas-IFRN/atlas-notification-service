@@ -5,9 +5,12 @@ from django.utils.translation import gettext_lazy as _
 
 
 class NotificationType(models.TextChoices):
-    SCHOLARSHIP = 'SCHOLARSHIP', _('Scholarship')
-    EVALUATION = 'EVALUATION', _('Evaluation')
-    SYSTEM = 'SYSTEM', _('System')
+    # O valor é usado pelo frontend para escolher o ícone da notificação.
+    FEED_LIKE = 'feed_like', _('Feed like')
+    FEED_COMMENT = 'feed_comment', _('Feed comment')
+    TRACK = 'track', _('Track')
+    SCHOLARSHIP = 'scholarship', _('Scholarship')
+    SYSTEM = 'system', _('System')
 
 
 class Notification(models.Model):
