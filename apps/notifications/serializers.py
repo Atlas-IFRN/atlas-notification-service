@@ -6,7 +6,7 @@ from .models import Notification
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
-        fields = ['id', 'title', 'message', 'is_read', 'type', 'created_at']
+        fields = ['id', 'title', 'message', 'is_read', 'type', 'link', 'created_at']
 
 
 class InternalNotificationCreateSerializer(serializers.ModelSerializer):
@@ -19,7 +19,7 @@ class InternalNotificationCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Notification
-        fields = ['id', 'user_id', 'title', 'message', 'type', 'event_id', 'is_read', 'created_at']
+        fields = ['id', 'user_id', 'title', 'message', 'type', 'link', 'event_id', 'is_read', 'created_at']
         read_only_fields = ['id', 'is_read', 'created_at']
         # `validators: []` remove o UniqueValidator que o DRF adiciona sozinho
         # por `event_id` ser unique — senão um reenvio com a mesma chave falharia
