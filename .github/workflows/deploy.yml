@@ -39,8 +39,14 @@ jobs:
             git -C "$SERVICE_DIR" checkout -B main origin/main
 
             # Rebuilda e reinicia apenas o(s) container(s) deste serviço.
-            echo "--> Rebuildando: notification-service"
-            docker compose up -d --build notification-service
+            echo "--> Rebuildando: notification-service celery-worker-notifications"
+            docker compose up -d --build notification-service celery-worker-notifications
+
+            # Recarrega o nginx para re-resolver o upstream. O container recriado
+            # ganha um IP novo na rede docker; sem reload, o nginx (upstream
+            # estático) segue apontando para o IP antigo e a rota do serviço
+            # responde 502. Reload é gracioso.
+            docker compose exec -T nginx nginx -s reload || true
 
             docker image prune -f
             echo ""
