@@ -30,6 +30,12 @@ class Notification(models.Model):
     message = models.TextField()
     is_read = models.BooleanField(default=False)
     type = models.CharField(max_length=20, choices=NotificationType.choices)
+
+    # Rota relativa do frontend para abrir o item relacionado ao clicar na
+    # notificação (ex.: "/inicio/post/<uuid>"). Vazio = notificação sem
+    # deep-link (só marca como lida no clique). Quem preenche é o produtor.
+    link = models.CharField(max_length=500, blank=True, default="")
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

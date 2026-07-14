@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
     default_retry_delay=10,
     acks_late=True,
 )
-def create_notification(self, user_id, title, message, type="system", event_id=None):
+def create_notification(self, user_id, title, message, type="system", event_id=None, link=""):
     """Persiste uma notificação a partir de um evento publicado na fila.
 
     Idempotente: se `event_id` vier preenchido, uma reentrega do broker
@@ -57,6 +57,7 @@ def create_notification(self, user_id, title, message, type="system", event_id=N
                     "title": title,
                     "message": message,
                     "type": type,
+                    "link": link or "",
                 },
             )
             if not created:
@@ -71,6 +72,7 @@ def create_notification(self, user_id, title, message, type="system", event_id=N
                 title=title,
                 message=message,
                 type=type,
+                link=link or "",
             )
     except Exception as exc:
         logger.exception("Falha ao criar notificação para o usuário %s — reenfileirando.", user_id)
