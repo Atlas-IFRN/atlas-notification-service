@@ -8,12 +8,32 @@ from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework import generics, pagination
 from rest_framework.views import APIView
 
 from config.permissions import IsInternalService
 
-from .models import Notification
-from .serializers import InternalNotificationCreateSerializer, NotificationSerializer
+from .models import AuditLog, Notification
+from .serializers import AuditLogSerializer, InternalNotificationCreateSerializer, NotificationSerializer
+
+
+class AuditLogPagination(pagination.PageNumberPagination):
+    page_size = 100
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+class AuditLogListView(generics.ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = AuditLogSerializer
+    pagination_class = AuditLogPagination
+
+    def get_queryset(self):
+        queryset = AuditLog.objects.all()
+        action_name = self.request.query_params.get('action')
+        if action_name:
+            queryset = queryset.filter(action=action_name.upper())
+        return queryset
 
 
 class NotificationPagination(PageNumberPagination):
@@ -71,7 +91,13 @@ class NotificationMarkAllReadView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        updated = Notification.objects.filter(user_id=request.user.id, is_read=False).update(is_read=True)
+        notifications = list(
+            Notification.objects.filter(user_id=request.user.id, is_read=False)
+        )
+        for notification in notifications:
+            notification.is_read = True
+            notification.save(update_fields=['is_read'])
+        updated = len(notifications)
         return Response({"updated": updated}, status=status.HTTP_200_OK)
 
 
