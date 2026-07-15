@@ -1,126 +1,80 @@
-# Notification Service 🔔
+# Atlas · Notification Service 🔔
 
-Microserviço do ecossistema **Atlas** responsável pelo gerenciamento das
-notificações dos usuários (boas-vindas, avaliações, bolsas e avisos de sistema).
+> Parte do **Projeto Atlas** — plataforma acadêmica desenvolvida para o **IFRN Campus Pau dos Ferros** como Projeto Integrador de Sistemas Distribuídos. O Atlas conecta alunos a trilhas de conhecimento e bolsas, com avaliação automática de código por IA.
 
-Foi extraído do `auth-service` para isolar o domínio de notificações em seu
-próprio serviço e schema de banco (`notification`).
+Microsserviço responsável pelas **notificações** da plataforma. É o **consumidor central**: os demais serviços publicam eventos no RabbitMQ e este serviço os transforma em notificações persistidas e consultáveis pelo usuário.
+
+## O que este serviço faz
+
+- **Consumo assíncrono:** um **worker Celery dedicado** (`celery-worker-notifications`, fila `notifications`) escuta o evento `notifications.create` publicado por auth, feed, tracks e scholarship.
+- **Persistência tipada:** grava `Notification` com tipo (`NotificationType`), destinatário e link/deeplink.
+- **Consulta e leitura:** o usuário lista suas notificações, marca uma como lida ou marca todas como lidas.
+- **Auditoria:** modelo `AuditLog` com registro automático e endpoint de consulta.
 
 ## Stack
 
-- Python · Django 6.x · Django REST Framework
-- PostgreSQL (schema `notification`)
-- Celery + RabbitMQ (consumo de eventos)
-- Docker · drf-spectacular (Swagger/OpenAPI 3.0)
+- Python · Django · Django REST Framework
+- PostgreSQL 16 (schema `notification`) · Redis · RabbitMQ + Celery (consumidor)
+- Gunicorn · Docker · drf-spectacular (Swagger)
 
-## Arquitetura
+## Como se encaixa no Atlas
 
-- **Autenticação:** stateless via JWT no header `Authorization`, validado
-  localmente com a mesma `DJANGO_SECRET_KEY` compartilhada entre os serviços
-  (nenhuma chamada de rede ao auth-service). Ver `config/authentication.py`.
-- **Sem FK para User:** como o usuário vive no schema do `auth-service`, a
-  notificação guarda apenas o `user_id` (UUID) — não há chave estrangeira
-  entre schemas.
-- **Event-driven (caminho principal):** este serviço é o **dono do consumo**.
-  Um worker Celery (`celery-worker-notifications`) escuta a fila `notifications`
-  no RabbitMQ e persiste as notificações. Os produtores (auth, scholarship,
-  tracks...) apenas **publicam** o evento pelo nome `notifications.create` via
-  `send_task` — sem HTTP e sem importar o código da task. Isso desacopla os
-  produtores da disponibilidade deste serviço e dá retry/durabilidade pela fila.
+| Repositório | Responsabilidade |
+|---|---|
+| atlas-auth-service | Identidade: SUAP OAuth2, JWT, perfis de usuário |
+| atlas-track-service | Trilhas, módulos, conteúdos, progresso e submissão de desafios |
+| atlas-scholarship-service | Bolsas, candidaturas, banco de talentos e notas |
+| atlas-feed-service | Feed institucional: posts, comentários, curtidas e banners |
+| **atlas-notification-service** | **Notificações (consumidor central via RabbitMQ)** |
+| atlas-ai-service | Avaliação de repositórios GitHub por LLM local (Ollama) |
+| atlas-frontend | SPA React + TypeScript (aluno e professor) |
+| atlas-infra | Docker Compose, Nginx (gateway), Postgres/Redis/RabbitMQ, deploy e backup |
+| atlas-observability | Prometheus + Grafana (métricas dos serviços) |
 
-  ```python
-  # exemplo no produtor (só precisa do broker + nome da task + fila):
-  celery_app.send_task(
-      "notifications.create",
-      kwargs={
-          "user_id": str(uid), "title": "...", "message": "...", "type": "SYSTEM",
-          "event_id": str(uuid.uuid4()),  # opcional, mas recomendado (idempotência)
-      },
-      queue="notifications",
-  )
-  ```
-- **Idempotência:** com `acks_late`, o broker pode reentregar uma mensagem já
-  processada. Envie um `event_id` (UUID) único por evento e o serviço deduplica
-  (constraint UNIQUE + `get_or_create`) em vez de gravar a notificação duas
-  vezes. Sem `event_id`, o comportamento é best-effort (sem dedup), como antes.
-- **Criação interna via HTTP (fallback):** também há
-  `POST /api/notifications/internal/notifications/`, protegido pelo header
-  `X-Internal-Token` (segredo `INTERNAL_TOKEN`), para casos síncronos ou serviços
-  sem Celery (ex.: o `ai-service`, em FastAPI) e para debug/testes.
+**Padrão pub/sub:** os produtores publicam eventos *best-effort* (se o broker estiver fora, a ação principal não é bloqueada). Este serviço é o único **consumidor** — concentrando a lógica de notificação em um só lugar.
+
+## Domínio (models principais)
+
+`Notification` (com `NotificationType`) · `AuditLog`
+
+## Principais endpoints (`/api/notifications/`)
+
+`notifications/` · `notifications/<id>/read/` · `notifications/mark-all-read/` · `audit-logs/`. Documentação em `api/notifications/docs/`.
+
+## Estrutura
+
+```
+apps/notifications/   models, views, serializers, services, tasks (consumo), audit
+config/               settings (base/local/production), urls, celery, authentication, permissions
+```
 
 ## Executando localmente
 
-Este serviço é orquestrado junto com todos os outros pelo repositório central de
-infraestrutura:
-
-> **[Atlas-IFRN/atlas-infra](https://github.com/Atlas-IFRN/atlas-infra)** — Docker Compose canônico, Nginx, scripts de deploy e backup.
-
-Para subir apenas a infraestrutura compartilhada (Postgres, Redis, RabbitMQ) e
-rodar este serviço isolado em modo dev:
+> Orquestrado pelo repositório central: **[Atlas-IFRN/atlas-infra](https://github.com/Atlas-IFRN/atlas-infra)**.
 
 ```bash
-# 1. Suba a infra compartilhada
 git clone https://github.com/Atlas-IFRN/atlas-infra
-cd atlas-infra
-docker compose -f docker-compose.dev.yml up -d
+cd atlas-infra && docker compose -f docker-compose.dev.yml up -d
 
-# 2. Neste repositório
 cp .env.example .env
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python manage.py migrate
-python manage.py runserver 8004
+python manage.py runserver 8000
+
+# Worker consumidor (obrigatório para processar eventos)
+celery -A config worker -l info -Q notifications
 ```
 
 ## Variáveis de ambiente
 
-Crie um `.env` baseado no `.env.example`. Principais: `DATABASE_URL`,
-`DJANGO_SECRET_KEY`, `INTERNAL_TOKEN`.
+Baseie seu `.env` no `.env.example`. Principais: `DJANGO_SECRET_KEY` (compartilhada — valida o JWT), `DATABASE_URL`, `REDIS_URL`, `CELERY_BROKER_URL`, `AUTH_SERVICE_URL`.
 
-## Documentação da API
+## Observabilidade & Auditoria
 
-Com o serviço rodando, acesse a documentação interativa:
+- **Métricas:** `/metrics` (django-prometheus), coletado pelo [atlas-observability](https://github.com/Atlas-IFRN/atlas-observability).
+- **Auditoria:** `AuditLog` registra operações com `user_id` e timestamp, consultáveis em `audit-logs/`.
 
-- **Swagger UI:** `http://localhost:8000/api/notifications/docs/`
+## CI/CD
 
-## Endpoints
-
-Todos os endpoints públicos exigem o header `Authorization: Bearer <token>`.
-
-### Listar notificações do usuário autenticado
-
-`GET /api/notifications/notifications/`
-
-Retorna as notificações **não lidas (sempre)** mais as **lidas** dentro da janela
-de `NOTIFICATION_LIST_WINDOW_DAYS` dias (padrão 5) — assim nada marcado "pra ler
-depois" desaparece. Resposta **paginada** (`page_size` padrão 20, até 100).
-
-Filtros/opções via query string: `?is_read=true|false`,
-`?type=SCHOLARSHIP|EVALUATION|SYSTEM`, `?page=N` e `?page_size=N`.
-
-### Marcar uma notificação como lida
-
-`PATCH /api/notifications/notifications/<uuid>/read/`
-
-### Marcar todas como lidas
-
-`POST /api/notifications/notifications/mark-all-read/`
-
-### Criar notificação (uso interno — serviço-a-serviço)
-
-`POST /api/notifications/internal/notifications/`
-
-Header obrigatório: `X-Internal-Token: <INTERNAL_TOKEN>`.
-
-```json
-{
-  "user_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "title": "Bem-vindo ao ATLAS! 🎓",
-  "message": "Sua conta foi criada com sucesso.",
-  "type": "SYSTEM",
-  "event_id": "9f1c2b3a-0000-4a5b-8c6d-1e2f3a4b5c6d"
-}
-```
-
-O campo `event_id` (UUID) é opcional e garante idempotência: reenvios com a
-mesma chave reaproveitam a notificação existente em vez de duplicar.
+Workflows de GitHub Actions em `.github/workflows/`.
