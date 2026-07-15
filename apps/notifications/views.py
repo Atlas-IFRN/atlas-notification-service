@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from rest_framework import generics, pagination
 from rest_framework.views import APIView
 
-from config.permissions import IsInternalService
+from config.permissions import IsInternalService, IsTeacher
 
 from .models import AuditLog, Notification
 from .serializers import AuditLogSerializer, InternalNotificationCreateSerializer, NotificationSerializer
@@ -24,7 +24,7 @@ class AuditLogPagination(pagination.PageNumberPagination):
 
 
 class AuditLogListView(generics.ListAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTeacher]
     serializer_class = AuditLogSerializer
     pagination_class = AuditLogPagination
 
