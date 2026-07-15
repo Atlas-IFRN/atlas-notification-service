@@ -12,6 +12,9 @@ urlpatterns = [
     path('api/notifications/admin/', admin.site.urls),
     path('health/', health_check),
 
+    # Endpoint /metrics para o Prometheus (django-prometheus).
+    path('', include('django_prometheus.urls')),
+
     # Rotas internas (serviço-a-serviço, protegidas por X-Internal-Token)
     path('api/notifications/internal/', include('apps.notifications.internal_urls')),
 
